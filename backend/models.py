@@ -202,20 +202,3 @@ class Analytics(Base):
     sla_breached_count = Column(Integer, default=0)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class KnowledgeBase(Base):
-    """
-    Knowledge Base - Verified, reusable solutions
-    Entries created ONLY from resolved and verified tickets
-    """
-    __tablename__ = "knowledge_base"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    problem_summary = Column(Text, nullable=False)
-    resolution_steps = Column(Text, nullable=False)
-    category = Column(String(100), nullable=False, index=True)
-    source_ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=False, unique=True)
-    is_active = Column(Boolean, default=True, nullable=False)
-    usage_count = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

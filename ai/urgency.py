@@ -204,24 +204,35 @@ class UrgencyDetector:
         
         body_truncated = body[:400] if len(body) > 400 else body
         
-        prompt = f"""You are a support ticket urgency classifier.
+        # Use signal-based classification as primary method
+        if len(signals) >= 3:
+            # Multiple urgent signals = P1 or P2
+            if any(s.startswith('BUSINESS_IMPACT') or s.startswith('ESCALATION') for s in signals):
+                return self._create_urgency_result('P1', signals, reasoning='Multiple critical signals detected')
+            return self._create_urgency_result('P2', signals, reasoning='Multiple urgency signals detected')
+        elif len(signals) >= 1:
+            # Some signals = P2 or P3
+            if any(s.startswith('TIME_SENSITIVE_CRITICAL') or s.startswith('ANGRY_TONE') for s in signals):
+                return self._create_urgency_result('P2', signals, reasoning='Time-sensitive or urgent tone detected')
+            return self._create_urgency_result('P3', signals, reasoning='Minor urgency signals detected')
+        
+        # Fallback to AI for no clear signals
+        prompt = f"""Classify this support ticket urgency. Respond with JSON only.
 
-Email Subject: {subject}
-Email Body: {body_truncated}
+Subject: {subject}
+Body: {body_truncated}
 Category: {category}
-Detected Signals: {', '.join(signals)}
 
-Severity Levels:
-- P1 (Critical): Production down, all users affected, emergency (SLA: 1 hour)
-- P2 (High): Major feature broken, blocking issue (SLA: 4 hours)
-- P3 (Medium): Minor issue, workaround available (SLA: 24 hours)
-- P4 (Low): Feature request, nice-to-have (SLA: 72 hours)
+RULES:
+- P1 (Critical): Production down, security breach, all users affected, data loss
+- P2 (High): Major feature broken, blocking multiple users, urgent requests
+- P3 (Medium): Minor bugs, single user issues, normal requests
+- P4 (Low): Feature requests, suggestions, questions, documentation
 
-Respond ONLY in this JSON format:
-{{
-    "severity": "P1/P2/P3/P4",
-    "reasoning": "brief explanation in 15 words or less"
-}}"""
+Be decisive. Most tickets are P3 or P4. Only use P1/P2 for genuine emergencies.
+
+Respond ONLY with valid JSON:
+{{"severity": "P1", "reasoning": "production system down"}}"""
 
         try:
             response = self.model.generate_content(prompt)
@@ -231,12 +242,28 @@ Respond ONLY in this JSON format:
             result_text = re.sub(r'```json\s*|\s*```', '', result_text)
             result = json.loads(result_text)
             
-            severity = result.get('severity', 'P3')
-            return self._create_urgency_result(severity, signals, reasoning=result.get('reasoning'))
+            severity = result.get('severity', 'P4')  # Default to P4 for normal requests
+            
+            # Validate severity
+            if severity not in ['P1', 'P2', 'P3', 'P4']:
+                severity = 'P4'
+            
+            return self._create_urgency_result(severity, signals, reasoning=result.get('reasoning', ''))
             
         except Exception as e:
-            # Default to P3 on error
-            return self._create_urgency_result('P3', signals, reasoning='AI detection failed - defaulting to medium')
+            # Intelligent fallback based on category and content
+            text_lower = (subject + " " + body).lower()
+            
+            # Check for question words - likely P4
+            if any(word in text_lower for word in ['how do i', 'can you', 'is it possible', 'would like', 'feature request']):
+                return self._create_urgency_result('P4', signals, reasoning='General inquiry or feature request')
+            
+            # Check for problem words - likely P3
+            if any(word in text_lower for word in ['not working', 'error', 'issue', 'problem', 'broken', 'bug']):
+                return self._create_urgency_result('P3', signals, reasoning='Technical issue reported')
+            
+            # Default to P4 for unclear cases
+            return self._create_urgency_result('P4', signals, reasoning='Normal priority request')
     
     def _create_urgency_result(
         self,

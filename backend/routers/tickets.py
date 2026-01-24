@@ -23,7 +23,6 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from ai.resolution_templates import generate_resolution_template
 from ai.auto_reply import auto_response_service
-from ai.kb_service import add_ticket_to_kb
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -356,17 +355,6 @@ async def resolve_ticket_with_email(
         
         db.commit()
         db.refresh(ticket)
-        
-        # STEP 3: Add to Knowledge Base if requested
-        kb_id = None
-        if request.add_to_kb:
-            try:
-                kb_id = add_ticket_to_kb(ticket.id, db)
-                print(f"✅ Added ticket {ticket_id} to KB (kb_id={kb_id})")
-            except Exception as kb_error:
-                # Log error but don't fail the resolution
-                print(f"⚠️ Failed to add ticket to KB: {kb_error}")
-                # Continue - ticket is still resolved successfully
         
         return ResolveTicketResponse(
             success=True,
