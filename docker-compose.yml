@@ -9,8 +9,8 @@ services:
     environment:
       DATABASE_URL: sqlite:///./data/intellidesk.db
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      REDIS_URL: redis://redis:6379
       SECRET_KEY: docker-secret-key-change-in-production
+      PYTHONUNBUFFERED: 1
       SMTP_HOST: smtp.gmail.com
       SMTP_PORT: 587
     ports:
@@ -24,7 +24,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
   frontend:
     build:
@@ -34,7 +34,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - intellidesk-network
     environment:

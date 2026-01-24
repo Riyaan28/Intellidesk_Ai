@@ -6,6 +6,7 @@ __pycache__/
 .Python
 backend/venv/
 backend/env/
+backend/.venv/
 *.egg-info/
 .pytest_cache/
 
@@ -13,17 +14,20 @@ backend/env/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/build/
 
 # Environment
 .env
 *.env
 !.env.example
+!.env.docker
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
 backend/data/
+backend/intellidesk.db
 
 # IDE
 .vscode/

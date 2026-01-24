@@ -8,13 +8,25 @@ RUN apt-get update && apt-get install -y \
   curl \
   && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip and install wheel for better performance
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
 # Copy requirements from both backend and ai
 COPY backend/requirements.txt ./backend_requirements.txt
 COPY ai/requirements.txt ./ai_requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r backend_requirements.txt
-RUN pip install --no-cache-dir -r ai_requirements.txt
+# Install lightweight dependencies first (faster, can cache)
+RUN pip install --default-timeout=1000 --retries 5 \
+  fastapi uvicorn[standard] sqlalchemy pydantic python-dotenv \
+  python-multipart email-validator redis psycopg2-binary
+
+# Install heavy ML dependencies separately with longer timeout
+RUN pip install --default-timeout=2000 --retries 5 \
+  google-generativeai numpy
+
+# Install the heaviest packages last (torch-based)
+RUN pip install --default-timeout=2000 --retries 5 \
+  sentence-transformers faiss-cpu
 
 # Copy AI module first
 COPY ai/ /app/ai/
