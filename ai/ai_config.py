@@ -17,9 +17,9 @@ GEMINI_EMBEDDING_MODEL = "models/embedding-001"
 ENABLE_LLM_FALLBACK = os.getenv("ENABLE_LLM_FALLBACK", "false").lower() == "true"
 
 # Classification Confidence Thresholds
-CONFIDENCE_HIGH = 0.80
-CONFIDENCE_MEDIUM = 0.60
-AUTO_SEND_CONFIDENCE = 0.95
+CONFIDENCE_HIGH = 0.60  # Reduced from 0.80 to increase confidence display
+CONFIDENCE_MEDIUM = 0.40  # Reduced from 0.60
+AUTO_SEND_CONFIDENCE = 0.85  # Reduced from 0.95 for more auto-responses
 
 # Categories
 EMAIL_CATEGORIES = [

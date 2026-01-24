@@ -14,8 +14,14 @@ from schemas import (
     TicketResponse,
     TicketDetailResponse,
     TicketListResponse,
-    TicketStatusEnum
+    TicketStatusEnum,
+    ResolveTicketRequest,
+    ResolveTicketResponse
 )
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+from ai.resolution_templates import generate_resolution_template
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -87,9 +93,6 @@ async def get_ticket(
     customer = db.query(Customer).filter(Customer.id == ticket.customer_id).first()
     
     # Get similar tickets using embeddings
-    import sys
-    import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
     from ai import embedding_service
     
     similar_tickets = embedding_service.search_similar(
@@ -201,3 +204,153 @@ async def get_ticket_thread(
             for t in sorted(related_tickets, key=lambda x: x.created_at)
         ]
     }
+
+
+@router.get("/{ticket_id}/resolution-template")
+async def get_resolution_template(
+    ticket_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get intelligent resolution template based on ticket category and tone
+    
+    Returns:
+        Generated template text that is calm, polite, and category-specific
+    """
+    ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
+    
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    # Generate intelligent template
+    template = generate_resolution_template(
+        category=ticket.category,
+        sender_name=ticket.sender,
+        email_body=ticket.body,
+        subject=ticket.subject
+    )
+    
+    return {"template": template}
+
+
+@router.post("/{ticket_id}/resolve", response_model=ResolveTicketResponse)
+async def resolve_ticket_with_email(
+    ticket_id: str,
+    request: ResolveTicketRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Send resolution email and mark ticket as resolved
+    
+    Args:
+        ticket_id: Ticket ID to resolve
+        request: Contains reply_text and recipient
+        
+    Returns:
+        Success status and ticket details
+    """
+    # Get ticket
+    ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
+    
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    # Check if already resolved
+    if ticket.status in [TicketStatusEnum.RESOLVED, TicketStatusEnum.CLOSED]:
+        raise HTTPException(status_code=400, detail="Ticket is already resolved")
+    
+    try:
+        # STEP 1: Send email
+        # In production, integrate with actual email service (SMTP, SendGrid, etc.)
+        # For now, we'll simulate email sending
+        email_sent = await send_resolution_email(
+            recipient=request.recipient,
+            subject=f"Re: {ticket.subject}",
+            body=request.reply_text,
+            ticket_id=ticket_id
+        )
+        
+        if not email_sent:
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to send email. Ticket not resolved."
+            )
+        
+        # STEP 2: Mark ticket as resolved (only if email sent successfully)
+        ticket.status = TicketStatusEnum.RESOLVED
+        ticket.resolved_at = datetime.utcnow()
+        ticket.resolution = request.reply_text
+        ticket.first_response_at = ticket.first_response_at or datetime.utcnow()
+        
+        db.commit()
+        db.refresh(ticket)
+        
+        return ResolveTicketResponse(
+            success=True,
+            ticket_id=ticket_id,
+            status="Resolved",
+            email_sent=True,
+            recipient=request.recipient,
+            resolved_at=ticket.resolved_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to resolve ticket: {str(e)}"
+        )
+
+
+async def send_resolution_email(recipient: str, subject: str, body: str, ticket_id: str) -> bool:
+    """
+    Send resolution email to customer
+    
+    In production, integrate with:
+    - SMTP (smtplib)
+    - SendGrid
+    - AWS SES
+    - Mailgun
+    - etc.
+    
+    For now, this simulates email sending and logs to console.
+    """
+    try:
+        # Simulate email sending
+        print("\n" + "="*80)
+        print("📧 RESOLUTION EMAIL (Simulated)")
+        print("="*80)
+        print(f"To: {recipient}")
+        print(f"Subject: {subject}")
+        print(f"Ticket ID: {ticket_id}")
+        print("-"*80)
+        print(body)
+        print("="*80 + "\n")
+        
+        # In production, add actual email sending here:
+        """
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        
+        msg = MIMEMultipart()
+        msg['From'] = 'support@yourcompany.com'
+        msg['To'] = recipient
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+        
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.starttls()
+            server.login('your_email@gmail.com', 'your_password')
+            server.send_message(msg)
+        """
+        
+        # Return True to simulate successful send
+        return True
+        
+    except Exception as e:
+        print(f"❌ Email send failed: {e}")
+        return False
+

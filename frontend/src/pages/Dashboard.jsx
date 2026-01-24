@@ -18,6 +18,23 @@ import { getDashboardStats, getTickets } from "../services/api";
 import TicketCard from "../components/TicketCard";
 import UrgencyBadge from "../components/UrgencyBadge";
 
+// Helper function to format response time
+const formatResponseTime = (seconds) => {
+  if (!seconds || seconds <= 0) return "N/A";
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  } else {
+    return `${secs}s`;
+  }
+};
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [tickets, setTickets] = useState([]);
@@ -112,7 +129,7 @@ export default function Dashboard() {
           <StatCard
             icon={Clock}
             label="Avg Response Time"
-            value={`${Math.round(stats?.avg_response_time || 0)}s`}
+            value={formatResponseTime(stats?.avg_response_time || 0)}
             change="-23%"
             changePositive={true}
           />

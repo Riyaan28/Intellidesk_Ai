@@ -415,7 +415,8 @@ class EmailProcessor:
             followup_count=followup_count,
             is_escalated=is_escalated,
             escalation_reason=escalation_reason,
-            escalation_time=escalation_time
+            escalation_time=escalation_time,
+            created_at=datetime.utcnow()  # Explicitly set to current UTC time
         )
         
         self.db.add(ticket)
