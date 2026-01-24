@@ -58,10 +58,28 @@ SEVERITY_LEVELS = {
     }
 }
 
-# Escalation Keywords
+# Escalation Keywords - trigger auto-escalation and higher priority
 ESCALATION_KEYWORDS = [
-    "lawyer", "legal", "cancel", "refund", "unacceptable",
-    "disappointed", "frustrated", "angry", "complaint"
+    # Legal threats
+    "lawyer", "attorney", "legal action", "sue", "lawsuit",
+    
+    # Cancellation threats
+    "cancel", "cancelling", "terminate", "end contract", "switch",
+    
+    # Financial
+    "refund", "chargeback", "money back", "compensation",
+    
+    # Emotional escalation
+    "unacceptable", "disappointed", "frustrated", "angry", "furious",
+    "disgusted", "appalled", "outraged",
+    
+    # Escalation actions
+    "complaint", "complain", "escalate", "manager", "supervisor",
+    "ceo", "executive", "corporate", "headquarters",
+    
+    # Social/public threats
+    "social media", "twitter", "facebook", "review", "bbb",
+    "better business bureau", "tell everyone", "warning others"
 ]
 
 # Deduplication Settings

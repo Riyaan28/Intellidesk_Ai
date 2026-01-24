@@ -191,6 +191,42 @@ export default function TicketDetail() {
                   </div>
                 </div>
               )}
+
+              {/* Escalation Alert */}
+              {ticket.is_escalated && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-red-600 font-bold text-sm">
+                      ⚠️ AUTO-ESCALATED
+                    </span>
+                  </div>
+                  {ticket.escalation_reason && (
+                    <p className="text-xs text-red-700 mt-1">
+                      {ticket.escalation_reason}
+                    </p>
+                  )}
+                  {ticket.followup_count > 0 && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Follow-up #{ticket.followup_count}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Follow-up indicator (non-escalated) */}
+              {!ticket.is_escalated && ticket.followup_count > 0 && (
+                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-yellow-700 font-medium text-sm">
+                      🔔 Follow-up #{ticket.followup_count}
+                    </span>
+                  </div>
+                  <p className="text-xs text-yellow-600 mt-1">
+                    Customer has reached out {ticket.followup_count} time(s).
+                    Next follow-up will trigger auto-escalation.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Response Preview */}

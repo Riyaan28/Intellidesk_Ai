@@ -73,6 +73,10 @@ class EmailProcessor:
         # 2. Customer identification
         customer_info = await self._identify_customer(sender, body)
         
+        # 3. Check follow-up count for sender (before deduplication)
+        followup_count = self._count_recent_tickets(sender)
+        is_followup = followup_count > 0
+        
         # 4. Check for existing tickets (deduplication)
         existing_tickets = self._get_recent_tickets(sender)
         dedup_result = self._check_deduplication(
@@ -118,13 +122,13 @@ class EmailProcessor:
                 processing_time_ms=processing_time
             )
         
-        # 5. Urgency detection
+        # 5. Urgency detection (with follow-up count for escalation)
         urgency = urgency_detector.detect_urgency(
             subject,
             body,
             classification['category'],
-            is_followup=False,
-            followup_count=0
+            is_followup=is_followup,
+            followup_count=followup_count
         )
         
         # 6. Create ticket
@@ -305,6 +309,22 @@ class EmailProcessor:
             for t in tickets
         ]
     
+    def _count_recent_tickets(self, sender: str, days: int = 7) -> int:
+        """
+        Count recent tickets from same sender (for follow-up detection)
+        Only count non-resolved tickets
+        """
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        
+        count = self.db.query(Ticket).filter(
+            Ticket.sender == sender,
+            Ticket.created_at >= cutoff,
+            Ticket.status.notin_(['Resolved', 'Closed'])
+        ).count()
+        
+        return count
+    
     def _check_deduplication(
         self,
         headers: Dict,
@@ -347,11 +367,28 @@ class EmailProcessor:
         customer_info: Dict
     ) -> Ticket:
         """
-        Create new support ticket
+        Create new support ticket with follow-up tracking and escalation
         """
         # Generate ticket ID
         ticket_count = self.db.query(Ticket).count()
         ticket_id = f"TKT-{ticket_count + 1:06d}"
+        
+        # Count follow-ups (non-resolved tickets from this sender)
+        followup_count = self._count_recent_tickets(sender)
+        
+        # Check if auto-escalated
+        is_escalated = urgency.get('auto_escalate', False)
+        escalation_reason = None
+        escalation_time = None
+        
+        if is_escalated:
+            escalation_time = datetime.utcnow()
+            if followup_count >= 3:
+                escalation_reason = f"Auto-escalated: {followup_count}rd follow-up"
+            elif 'ESCALATION_LANGUAGE' in urgency.get('signals', []):
+                escalation_reason = "Auto-escalated: Escalation keywords detected"
+            else:
+                escalation_reason = "Auto-escalated: Critical severity"
         
         ticket = Ticket(
             ticket_id=ticket_id,
@@ -374,7 +411,11 @@ class EmailProcessor:
             urgency_reasoning=urgency.get('reasoning'),
             status="New",
             is_thread=False,
-            thread_count=0
+            thread_count=0,
+            followup_count=followup_count,
+            is_escalated=is_escalated,
+            escalation_reason=escalation_reason,
+            escalation_time=escalation_time
         )
         
         self.db.add(ticket)

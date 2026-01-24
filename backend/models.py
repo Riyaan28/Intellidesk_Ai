@@ -129,6 +129,12 @@ class Ticket(Base):
     parent_ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
     thread_count = Column(Integer, default=0)
     
+    # Follow-up tracking & Escalation
+    followup_count = Column(Integer, default=0)  # Number of follow-ups from same sender
+    is_escalated = Column(Boolean, default=False)  # Auto-escalated flag
+    escalation_reason = Column(String(255))  # Why it was escalated
+    escalation_time = Column(DateTime(timezone=True))  # When escalated
+    
     # Resolution
     resolution = Column(Text)
     resolved_at = Column(DateTime(timezone=True))

@@ -26,6 +26,16 @@ export default function TicketCard({ ticket, onClick }) {
               {ticket.ticket_id}
             </span>
             <UrgencyBadge severity={ticket.severity} size="sm" />
+            {ticket.is_escalated && (
+              <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">
+                ⚠️ ESCALATED
+              </span>
+            )}
+            {!ticket.is_escalated && ticket.followup_count > 0 && (
+              <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded">
+                🔔 Follow-up #{ticket.followup_count}
+              </span>
+            )}
           </div>
           <h3 className="text-base font-semibold text-gray-900 line-clamp-2">
             {ticket.subject}
