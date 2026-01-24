@@ -63,14 +63,14 @@ class EmailProcessor:
         
         headers = headers or {}
         
-        # 1. Spam detection
-        if classifier.is_spam(subject, body):
-            return self._create_spam_response()
-        
-        # 2. Email classification
+        # 1. Email classification (includes spam detection)
         classification = classifier.classify_email(subject, body, sender)
         
-        # 3. Customer identification
+        # Check if spam and return early
+        if classification.get('is_spam', False):
+            return self._create_spam_response(classification)
+        
+        # 2. Customer identification
         customer_info = await self._identify_customer(sender, body)
         
         # 4. Check for existing tickets (deduplication)
@@ -407,7 +407,7 @@ class EmailProcessor:
         
         return ticket
     
-    def _create_spam_response(self) -> EmailProcessResponse:
+    def _create_spam_response(self, classification: Dict) -> EmailProcessResponse:
         """
         Create response for spam emails
         """
@@ -416,10 +416,13 @@ class EmailProcessor:
             ticket_id=None,
             classification=ClassificationResult(
                 category="Spam",
-                confidence=1.0,
-                subcategory="Promotional",
+                confidence=classification.get('confidence', 1.0),
+                subcategory=classification.get('subcategory', 'Promotional'),
                 requires_review=False,
-                reasoning="Spam detected"
+                reasoning=classification.get('reasoning', 'Spam detected'),
+                method_used=classification.get('method_used', 'spam_filter'),
+                language_detected=classification.get('language_detected', ['English']),
+                is_spam=True
             ),
             urgency=UrgencyResult(
                 severity="P4",
@@ -442,5 +445,5 @@ class EmailProcessor:
                 references=[]
             ),
             customer_info=None,
-            processing_time_ms=0.0
+            processing_time_ms=classification.get('processing_time_ms', 0.0)
         )

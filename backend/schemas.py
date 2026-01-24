@@ -44,6 +44,10 @@ class ClassificationResult(BaseModel):
     subcategory: Optional[str] = None
     requires_review: bool
     reasoning: str
+    method_used: Optional[str] = "lightweight_classifier"
+    is_spam: Optional[bool] = False
+    language_detected: Optional[List[str]] = []
+    processing_time_ms: Optional[float] = 0.0
 
 
 class UrgencyResult(BaseModel):
