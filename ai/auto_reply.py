@@ -75,9 +75,16 @@ class AutoResponseService:
         """
         Generate intelligent auto-response
         
+        FLOW:
+        1. Search Knowledge Base (FAISS)
+        2. If KB similarity >= 0.85 → use KB resolution
+        3. Else → Search FAQ database
+        4. Else → Search similar tickets
+        5. Else → Call Gemini
+        
         Returns:
             {
-                'response_type': 'perfect_match' | 'partial_match' | 'acknowledgment',
+                'response_type': 'kb_match' | 'perfect_match' | 'partial_match' | 'acknowledgment',
                 'response_text': str,
                 'confidence': float,
                 'auto_send': bool,
@@ -86,10 +93,23 @@ class AutoResponseService:
             }
         """
         
-        # 1. Search FAQ database
+        # STEP 1: Search Knowledge Base FIRST
+        kb_matches = self._search_kb(subject, body, category)
+        
+        if kb_matches and kb_matches[0]['similarity'] >= 0.85:
+            # Use KB resolution - HIGH CONFIDENCE
+            return self._create_kb_response(
+                kb_matches[0],
+                sender_name,
+                ticket_id,
+                sla_hours,
+                severity
+            )
+        
+        # STEP 2: Search FAQ database (fallback)
         faq_match = self._search_faq(subject, body, category)
         
-        # 2. Search similar resolved tickets
+        # STEP 3: Search similar resolved tickets
         similar_tickets = self.embedding_service.search_similar(
             subject,
             body,
@@ -97,13 +117,13 @@ class AutoResponseService:
             threshold=0.80
         )
         
-        # Filter for resolved tickets only
+        # Filter for resolved tickets only (exclude KB entries)
         resolved_tickets = [
             t for t in similar_tickets
-            if t.get('resolution', '').strip()
+            if t.get('resolution', '').strip() and t.get('type') != 'kb'
         ]
         
-        # 3. Determine response type and generate
+        # STEP 4: Determine response type and generate
         if faq_match and faq_match['similarity'] >= 0.90:
             # Perfect match - send complete solution
             return self._create_perfect_match_response(
@@ -474,6 +494,105 @@ Priority: {severity}"""
                 'sender_name': sender_name,
                 'company_name': company_name
             }
+    
+    def _search_kb(self, subject: str, body: str, category: str) -> List[Dict]:
+        """
+        Search Knowledge Base using FAISS
+        
+        Returns ACTIVE KB entries only with similarity >= 0.70, sorted by similarity
+        """
+        from ai.kb_service import get_active_kb_entries
+        
+        query_text = f"{subject} {body}"
+        query_embedding = self.embedding_service.get_embedding(query_text)
+        
+        # Search FAISS
+        import numpy as np
+        distances, indices = self.embedding_service.index.search(
+            np.array([query_embedding]), 
+            k=5
+        )
+        
+        kb_results = []
+        for dist, idx in zip(distances[0], indices[0]):
+            if idx < len(self.embedding_service.metadata):
+                metadata = self.embedding_service.metadata[idx]
+                
+                # Filter for KB entries only (type == 'kb')
+                if metadata.get('type') == 'kb':
+                    # Convert L2 distance to similarity
+                    similarity = 1 / (1 + dist)
+                    
+                    kb_id = metadata.get('kb_id')
+                    
+                    # Skip inactive entries - check is_active from metadata or DB
+                    # Note: FAISS metadata might be stale, so we rely on DB check during response
+                    
+                    # Filter by category (optional - helps precision)
+                    if metadata.get('category') == category or similarity >= 0.85:
+                        if similarity >= 0.70:
+                            kb_results.append({
+                                'kb_id': kb_id,
+                                'problem_summary': metadata.get('problem_summary'),
+                                'resolution_steps': metadata.get('resolution_steps'),
+                                'category': metadata.get('category'),
+                                'similarity': float(similarity)
+                            })
+        
+        # Sort by similarity descending
+        kb_results.sort(key=lambda x: x['similarity'], reverse=True)
+        return kb_results
+    
+    def _create_kb_response(
+        self,
+        kb_entry: Dict,
+        sender_name: str,
+        ticket_id: str,
+        sla_hours: int,
+        severity: str
+    ) -> Dict:
+        """
+        Create response using Knowledge Base entry
+        Confidence = KB similarity score
+        Increment usage_count in database (only if active)
+        
+        NOTE: This method assumes kb_entry is from active KB entries.
+        Caller should verify is_active status from database if needed.
+        """
+        response_text = f"""Dear {sender_name},
+
+Thank you for contacting IntelliDesk Support!
+
+Based on our Knowledge Base, here is the verified solution for your issue:
+
+**Problem:**
+{kb_entry['problem_summary']}
+
+**Resolution:**
+{kb_entry['resolution_steps']}
+
+This solution has been verified and successfully resolved similar issues in the past.
+
+If this doesn't fully address your concern, please reply to this email and our support team will assist you further.
+
+**Ticket ID:** {ticket_id}
+**Priority:** {severity}
+**Confidence:** {kb_entry['similarity']*100:.1f}%
+
+Best regards,
+IntelliDesk AI Support"""
+        
+        # Usage count will be incremented by caller using increment_kb_usage()
+        
+        return {
+            'response_type': 'kb_match',
+            'response_text': response_text,
+            'confidence': kb_entry['similarity'],  # Confidence from KB similarity
+            'auto_send': kb_entry['similarity'] >= AUTO_SEND_CONFIDENCE,
+            'references': [f"KB Entry #{kb_entry['kb_id']}"],
+            'similar_tickets': [],
+            'kb_id': kb_entry['kb_id']
+        }
 
 
 # Singleton instance

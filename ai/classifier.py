@@ -12,8 +12,8 @@ try:
     from .lightweight_classifier import lightweight_classifier
     from .ai_config import CONFIDENCE_HIGH, ENABLE_LLM_FALLBACK
 except ImportError:
-    from ai.lightweight_classifier import lightweight_classifier
-    from ai.ai_config import CONFIDENCE_HIGH, ENABLE_LLM_FALLBACK
+    from lightweight_classifier import lightweight_classifier
+    from ai_config import CONFIDENCE_HIGH, ENABLE_LLM_FALLBACK
 
 
 class EmailClassifier:

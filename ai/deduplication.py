@@ -166,8 +166,7 @@ class DeduplicationService:
         existing_tickets: List[Dict]
     ) -> Optional[Dict]:
         """
-        Check for same sender on same topic within 48-hour window
-        Groups emails from same sender within 48 hours
+        Check for same sender within time window
         """
         normalized_subject = self._normalize_subject(subject)
         
@@ -178,8 +177,8 @@ class DeduplicationService:
             if sender.lower() == ticket_sender.lower():
                 # Same sender - check subject similarity
                 if self._fuzzy_match(normalized_subject, self._normalize_subject(ticket_subject)):
-                    # Check within 48-hour window (as specified)
-                    if self._within_time_window(ticket, 48):
+                    # Check within 48-hour window
+                    if self._within_time_window(ticket, SAME_SENDER_WINDOW_HOURS):
                         return ticket
         
         return None
@@ -192,23 +191,22 @@ class DeduplicationService:
     ) -> Optional[Dict]:
         """
         Check semantic similarity using embeddings
-        Uses 85% threshold within 72-hour window
         """
         # Only check recent tickets (within 72 hours)
         recent_tickets = [
             t for t in existing_tickets
-            if self._within_time_window(t, 72)  # 72 hours as specified
+            if self._within_time_window(t, THREAD_WINDOW_HOURS)
         ]
         
         if not recent_tickets:
             return None
         
-        # Search for similar tickets with 85% threshold
+        # Search for similar tickets
         similar_tickets = self.embedding_service.search_similar(
             subject,
             body,
-            top_k=5,
-            threshold=0.85  # 85% similarity as specified
+            top_k=3,
+            threshold=SIMILARITY_THRESHOLD
         )
         
         if similar_tickets:

@@ -222,6 +222,7 @@ class ResolveTicketRequest(BaseModel):
     """
     reply_text: str = Field(..., min_length=10, description="Resolution email body text")
     recipient: EmailStr = Field(..., description="Email recipient (ticket sender)")
+    add_to_kb: bool = Field(default=False, description="Add this resolved ticket to Knowledge Base")
 
 
 class ResolveTicketResponse(BaseModel):

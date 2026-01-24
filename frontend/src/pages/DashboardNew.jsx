@@ -24,14 +24,6 @@ import {
   Sun,
   Trash2,
 } from "lucide-react";
-import {
-  PieChart as RechartsPie,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from "recharts";
 import { getDashboardStats, getTickets } from "../services/api";
 import TicketCard from "../components/TicketCard";
 import UrgencyBadge from "../components/UrgencyBadge";
@@ -53,26 +45,6 @@ const formatResponseTime = (seconds) => {
   } else {
     return `${secs}s`;
   }
-};
-
-// Color schemes for pie charts
-const CATEGORY_COLORS = [
-  "#8b5cf6", // Purple
-  "#ec4899", // Pink
-  "#f59e0b", // Amber
-  "#10b981", // Green
-  "#3b82f6", // Blue
-  "#f97316", // Orange
-  "#14b8a6", // Teal
-  "#6366f1", // Indigo
-  "#84cc16", // Lime
-];
-
-const SEVERITY_COLORS = {
-  P1: "#dc2626", // Red
-  P2: "#f59e0b", // Orange
-  P3: "#eab308", // Yellow
-  P4: "#3b82f6", // Blue
 };
 
 export default function DashboardNew() {
@@ -269,10 +241,10 @@ export default function DashboardNew() {
           />
         </div>
 
-        {/* Analytics Section with Pie Charts */}
+        {/* Analytics Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Category Distribution Pie Chart */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300">
+          {/* Category Distribution */}
+          <div className="bg-white rounded-2xl shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300">
             <div className="bg-gradient-to-r from-indigo-500 to-purple-500 p-6">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-white/20 backdrop-blur-lg rounded-xl flex items-center justify-center">
@@ -289,41 +261,44 @@ export default function DashboardNew() {
               </div>
             </div>
             <div className="p-6">
-              <ResponsiveContainer width="100%" height={300}>
-                <RechartsPie>
-                  <Pie
-                    data={
-                      stats?.top_categories?.map((cat) => ({
-                        name: cat.category,
-                        value: cat.count,
-                      })) || []
-                    }
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) =>
-                      `${name}: ${(percent * 100).toFixed(0)}%`
-                    }
-                    outerRadius={100}
-                    fill="#8884d8"
-                    dataKey="value"
+              <div className="space-y-4">
+                {stats?.top_categories?.map((cat, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    style={{
+                      animation: `slideInLeft 0.5s ease-out ${idx * 100}ms both`,
+                    }}
                   >
-                    {stats?.top_categories?.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </RechartsPie>
-              </ResponsiveContainer>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold">
+                        {idx + 1}
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {cat.category}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-24 bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-1000"
+                          style={{
+                            width: `${(cat.count / (stats.total_tickets_today || 1)) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-sm font-bold text-gray-900 w-8 text-right">
+                        {cat.count}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Severity Distribution Pie Chart */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300">
+          {/* Severity Distribution */}
+          <div className="bg-white rounded-2xl shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300">
             <div className="bg-gradient-to-r from-orange-500 to-red-500 p-6">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-white/20 backdrop-blur-lg rounded-xl flex items-center justify-center">
@@ -338,38 +313,47 @@ export default function DashboardNew() {
               </div>
             </div>
             <div className="p-6">
-              <ResponsiveContainer width="100%" height={300}>
-                <RechartsPie>
-                  <Pie
-                    data={Object.entries(
-                      stats?.severity_distribution || {},
-                    ).map(([severity, count]) => ({
-                      name: severity,
-                      value: count,
-                    }))}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) =>
-                      `${name}: ${(percent * 100).toFixed(0)}%`
-                    }
-                    outerRadius={100}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {Object.entries(stats?.severity_distribution || {}).map(
-                      ([severity], index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={SEVERITY_COLORS[severity] || "#999999"}
-                        />
-                      ),
-                    )}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </RechartsPie>
-              </ResponsiveContainer>
+              <div className="grid grid-cols-2 gap-4">
+                {Object.entries(stats?.severity_distribution || {}).map(
+                  ([severity, count], idx) => (
+                    <div
+                      key={severity}
+                      className={`p-4 rounded-xl border-2 transition-all hover:scale-105 ${
+                        severity === "P1"
+                          ? "bg-red-50 border-red-200 hover:border-red-400"
+                          : severity === "P2"
+                            ? "bg-orange-50 border-orange-200 hover:border-orange-400"
+                            : severity === "P3"
+                              ? "bg-yellow-50 border-yellow-200 hover:border-yellow-400"
+                              : "bg-blue-50 border-blue-200 hover:border-blue-400"
+                      }`}
+                      style={{
+                        animation: `fadeInUp 0.5s ease-out ${idx * 100}ms both`,
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <UrgencyBadge severity={severity} size="sm" />
+                        <span
+                          className={`text-2xl font-black ${
+                            severity === "P1"
+                              ? "text-red-600"
+                              : severity === "P2"
+                                ? "text-orange-600"
+                                : severity === "P3"
+                                  ? "text-yellow-600"
+                                  : "text-blue-600"
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-600 font-medium">
+                        {Math.round((count / tickets.length) * 100)}% of total
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
             </div>
           </div>
         </div>

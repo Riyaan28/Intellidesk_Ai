@@ -23,10 +23,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from ai.resolution_templates import generate_resolution_template
 from ai.auto_reply import auto_response_service
-from ai.test_ticket_generator import test_ticket_generator
-from ai.classifier import classifier
-from ai.urgency import urgency_analyzer
-from ai.deduplication import deduplication_service
+from ai.kb_service import add_ticket_to_kb
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -87,8 +84,7 @@ async def get_ticket(
     db: Session = Depends(get_db)
 ):
     """
-    Get detailed ticket information with related tickets
-    Uses improved logic: same classification, >85% similarity within 72h
+    Get detailed ticket information
     """
     ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
     
@@ -98,58 +94,15 @@ async def get_ticket(
     # Get customer info
     customer = db.query(Customer).filter(Customer.id == ticket.customer_id).first()
     
-    # Get related tickets using improved logic
-    # Get all tickets with same classification
-    all_tickets = db.query(Ticket).filter(
-        Ticket.ticket_id != ticket_id,
-        Ticket.category == ticket.category  # Same classification only
-    ).all()
-    
-    existing_tickets = [
-        {
-            'ticket_id': t.ticket_id,
-            'subject': t.subject,
-            'body': t.body,
-            'sender': t.sender,
-            'category': t.category,
-            'severity': t.severity,
-            'created_at': t.created_at,
-            'status': t.status
-        }
-        for t in all_tickets
-    ]
-    
-    related_tickets = []
-    
-    # Use semantic similarity (>85% within 72 hours)
+    # Get similar tickets using embeddings
     from ai import embedding_service
+    
     similar_tickets = embedding_service.search_similar(
         ticket.subject,
         ticket.body,
-        top_k=5,
-        threshold=0.85  # 85% as specified
+        top_k=3,
+        threshold=0.70
     )
-    
-    # Filter by time window and same category
-    for similar in similar_tickets:
-        similar_id = similar.get('ticket_id')
-        if similar_id and similar_id != ticket_id:
-            similar_ticket = db.query(Ticket).filter(
-                Ticket.ticket_id == similar_id,
-                Ticket.category == ticket.category
-            ).first()
-            
-            if similar_ticket:
-                time_diff = datetime.utcnow() - similar_ticket.created_at
-                if time_diff.total_seconds() / 3600 <= 72:  # Within 72 hours
-                    related_tickets.append({
-                        'ticket_id': similar_ticket.ticket_id,
-                        'subject': similar_ticket.subject,
-                        'similarity': similar.get('similarity', 0.0),
-                        'category': similar_ticket.category,
-                        'severity': similar_ticket.severity,
-                        'status': similar_ticket.status
-                    })
     
     # Build response
     response_data = TicketResponse.from_orm(ticket)
@@ -157,7 +110,7 @@ async def get_ticket(
         **response_data.dict(),
         customer_company=customer.company_name if customer else None,
         customer_tier=customer.tier if customer else None,
-        similar_tickets=related_tickets[:3]  # Limit to top 3
+        similar_tickets=similar_tickets
     )
     
     return detail_response
@@ -404,6 +357,17 @@ async def resolve_ticket_with_email(
         db.commit()
         db.refresh(ticket)
         
+        # STEP 3: Add to Knowledge Base if requested
+        kb_id = None
+        if request.add_to_kb:
+            try:
+                kb_id = add_ticket_to_kb(ticket.id, db)
+                print(f"✅ Added ticket {ticket_id} to KB (kb_id={kb_id})")
+            except Exception as kb_error:
+                # Log error but don't fail the resolution
+                print(f"⚠️ Failed to add ticket to KB: {kb_error}")
+                # Continue - ticket is still resolved successfully
+        
         return ResolveTicketResponse(
             success=True,
             ticket_id=ticket_id,
@@ -505,192 +469,4 @@ async def clear_all_tickets(db: Session = Depends(get_db)):
             status_code=500,
             detail=f"Failed to delete tickets: {str(e)}"
         )
-
-
-@router.post("/generate-test-tickets")
-async def generate_test_tickets(
-    count: int = Query(7, ge=1, le=20),
-    db: Session = Depends(get_db)
-):
-    """
-    Generate random test tickets for testing purposes
-    
-    Args:
-        count: Number of tickets to generate (default: 7, max: 20)
-        
-    Returns:
-        List of created ticket IDs
-    """
-    try:
-        # Generate random test tickets
-        test_tickets = test_ticket_generator.generate_random_tickets(count)
-        
-        created_tickets = []
-        
-        for ticket_data in test_tickets:
-            # Classify the ticket
-            classification = classifier.classify(
-                ticket_data['subject'],
-                ticket_data['body']
-            )
-            
-            # Analyze urgency
-            urgency_result = urgency_analyzer.analyze_urgency(
-                ticket_data['subject'],
-                ticket_data['body'],
-                ticket_data['sender']
-            )
-            
-            # Generate ticket ID
-            ticket_id = f"TKT-{datetime.utcnow().strftime('%Y%m%d')}-{db.query(Ticket).count() + 1:04d}"
-            
-            # Create ticket
-            ticket = Ticket(
-                ticket_id=ticket_id,
-                subject=ticket_data['subject'],
-                body=ticket_data['body'],
-                sender=ticket_data['sender'],
-                category=classification['category'],
-                severity=urgency_result['severity'],
-                urgency_signals=urgency_result.get('signals', []),
-                classification_confidence=classification.get('confidence', 0.0),
-                created_at=ticket_data['created_at'],
-                status='Open'
-            )
-            
-            db.add(ticket)
-            db.flush()
-            
-            created_tickets.append({
-                'ticket_id': ticket_id,
-                'subject': ticket_data['subject'],
-                'category': classification['category'],
-                'severity': urgency_result['severity']
-            })
-        
-        db.commit()
-        
-        return {
-            'success': True,
-            'count': len(created_tickets),
-            'tickets': created_tickets,
-            'message': f'Successfully created {len(created_tickets)} test ticket(s)'
-        }
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate test tickets: {str(e)}"
-        )
-
-
-@router.get("/{ticket_id}/related")
-async def get_related_tickets(
-    ticket_id: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Get related tickets using improved deduplication logic:
-    - Same classification only
-    - Embeddings similarity >85% within 72 hours
-    - Fuzzy subject matching (ignoring Re:, timestamps)
-    - Ticket reference parsing
-    """
-    ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
-    
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    
-    # Get all tickets from database
-    all_tickets = db.query(Ticket).filter(
-        Ticket.ticket_id != ticket_id,
-        Ticket.category == ticket.category  # Same classification only
-    ).all()
-    
-    # Convert to dict format
-    existing_tickets = [
-        {
-            'ticket_id': t.ticket_id,
-            'subject': t.subject,
-            'body': t.body,
-            'sender': t.sender,
-            'category': t.category,
-            'severity': t.severity,
-            'created_at': t.created_at,
-            'status': t.status
-        }
-        for t in all_tickets
-    ]
-    
-    related_tickets = []
-    
-    # Method 1: Check ticket references in current ticket
-    ticket_ref_match = deduplication_service._check_ticket_references(
-        ticket.subject,
-        ticket.body,
-        existing_tickets
-    )
-    if ticket_ref_match:
-        related_tickets.append(ticket_ref_match)
-    
-    # Method 2: Same sender within 48 hours
-    sender_matches = [
-        t for t in existing_tickets
-        if t['sender'].lower() == ticket.sender.lower()
-        and deduplication_service._within_time_window(t, 48)
-        and deduplication_service._fuzzy_match(
-            deduplication_service._normalize_subject(ticket.subject),
-            deduplication_service._normalize_subject(t['subject'])
-        )
-    ]
-    related_tickets.extend(sender_matches)
-    
-    # Method 3: Semantic similarity (>85% within 72 hours)
-    from ai import embedding_service
-    similar_tickets = embedding_service.search_similar(
-        ticket.subject,
-        ticket.body,
-        top_k=5,
-        threshold=0.85  # 85% similarity
-    )
-    
-    # Filter by time window and same category
-    for similar in similar_tickets:
-        similar_id = similar.get('ticket_id')
-        if similar_id and similar_id != ticket_id:
-            similar_ticket = db.query(Ticket).filter(
-                Ticket.ticket_id == similar_id,
-                Ticket.category == ticket.category  # Same classification
-            ).first()
-            
-            if similar_ticket:
-                time_diff = datetime.utcnow() - similar_ticket.created_at
-                if time_diff.total_seconds() / 3600 <= 72:  # Within 72 hours
-                    related_tickets.append({
-                        'ticket_id': similar_ticket.ticket_id,
-                        'subject': similar_ticket.subject,
-                        'body': similar_ticket.body,
-                        'sender': similar_ticket.sender,
-                        'category': similar_ticket.category,
-                        'severity': similar_ticket.severity,
-                        'created_at': similar_ticket.created_at,
-                        'status': similar_ticket.status,
-                        'similarity': similar.get('similarity', 0.0)
-                    })
-    
-    # Remove duplicates
-    seen_ids = set()
-    unique_related = []
-    for t in related_tickets:
-        tid = t.get('ticket_id')
-        if tid and tid not in seen_ids:
-            seen_ids.add(tid)
-            unique_related.append(t)
-    
-    return {
-        'ticket_id': ticket_id,
-        'related_count': len(unique_related),
-        'related_tickets': unique_related[:10]  # Limit to 10
-    }
 
