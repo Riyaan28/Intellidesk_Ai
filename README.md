@@ -11,24 +11,7 @@ Transform customer support emails into intelligently classified, prioritized, an
 
 ## 📹 Demo & Walkthrough
 
-**🎥 Watch Full Demo**: [Loom Video Link](YOUR_LOOM_VIDEO_LINK_HERE)
-
-### Screenshots
-
-#### Dashboard - Beautiful UI with Real-Time Analytics
-
-![Dashboard](./screenshots/dashboard.png)
-_Modern glassmorphism design with animated stats, severity distribution, and live search_
-
-#### Ticket Detail - AI Reasoning & Customer Insights
-
-![Ticket Detail](./screenshots/ticket-detail.png)
-_Comprehensive view with AI confidence scores, urgency signals, and related tickets_
-
-#### Auto-Resolution - LLM-Generated Perfect Replies
-
-![Auto Resolve](./screenshots/auto-resolve.png)
-_AI-generated professional responses with 90%+ confidence auto-send_
+**🎥 Watch Full Demo**: [Loom Video Link](https://www.loom.com/share/f24104864f064944b2b479e4a388811a)
 
 ---
 
