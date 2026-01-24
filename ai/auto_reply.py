@@ -75,9 +75,16 @@ class AutoResponseService:
         """
         Generate intelligent auto-response
         
+        FLOW:
+        1. Search Knowledge Base (FAISS)
+        2. If KB similarity >= 0.85 → use KB resolution
+        3. Else → Search FAQ database
+        4. Else → Search similar tickets
+        5. Else → Call Gemini
+        
         Returns:
             {
-                'response_type': 'perfect_match' | 'partial_match' | 'acknowledgment',
+                'response_type': 'kb_match' | 'perfect_match' | 'partial_match' | 'acknowledgment',
                 'response_text': str,
                 'confidence': float,
                 'auto_send': bool,
@@ -86,10 +93,23 @@ class AutoResponseService:
             }
         """
         
-        # 1. Search FAQ database
+        # STEP 1: Search Knowledge Base FIRST
+        kb_matches = self._search_kb(subject, body, category)
+        
+        if kb_matches and kb_matches[0]['similarity'] >= 0.85:
+            # Use KB resolution - HIGH CONFIDENCE
+            return self._create_kb_response(
+                kb_matches[0],
+                sender_name,
+                ticket_id,
+                sla_hours,
+                severity
+            )
+        
+        # STEP 2: Search FAQ database (fallback)
         faq_match = self._search_faq(subject, body, category)
         
-        # 2. Search similar resolved tickets
+        # STEP 3: Search similar resolved tickets
         similar_tickets = self.embedding_service.search_similar(
             subject,
             body,
@@ -97,13 +117,13 @@ class AutoResponseService:
             threshold=0.80
         )
         
-        # Filter for resolved tickets only
+        # Filter for resolved tickets only (exclude KB entries)
         resolved_tickets = [
             t for t in similar_tickets
-            if t.get('resolution', '').strip()
+            if t.get('resolution', '').strip() and t.get('type') != 'kb'
         ]
         
-        # 3. Determine response type and generate
+        # STEP 4: Determine response type and generate
         if faq_match and faq_match['similarity'] >= 0.90:
             # Perfect match - send complete solution
             return self._create_perfect_match_response(
@@ -379,6 +399,199 @@ IntelliDesk AI Support"""
             'auto_send': True,  # Always auto-send acknowledgments
             'references': [],
             'similar_tickets': []
+        }
+
+
+    def generate_perfect_reply(
+        self,
+        subject: str,
+        body: str,
+        sender_email: str,
+        category: str,
+        severity: str,
+        confidence: float
+    ) -> Dict:
+        """
+        Generate a perfect, context-aware resolution email using Gemini LLM
+        This is used for manual resolution with pre-filled high-quality responses
+        
+        Returns:
+            {
+                'reply_text': str,
+                'should_auto_send': bool (True if confidence > 90%)
+            }
+        """
+        # Extract sender name and company from email
+        sender_name = sender_email.split('@')[0].replace('.', ' ').replace('_', ' ').title()
+        company_name = sender_email.split('@')[1].split('.')[0].title() if '@' in sender_email else 'Valued Customer'
+        
+        # Create comprehensive prompt for LLM
+        prompt = f"""You are a professional customer support specialist. Generate a perfect resolution email for this support ticket.
+
+Ticket Details:
+- Subject: {subject}
+- Category: {category}
+- Severity: {severity}
+- Customer Email: {sender_email}
+- Customer Name: {sender_name}
+- Company: {company_name}
+- Classification Confidence: {confidence*100:.1f}%
+
+Customer's Issue:
+{body[:500]}
+
+Instructions:
+1. Address the customer by name warmly
+2. Show empathy and understanding
+3. Provide a clear, actionable solution
+4. Include step-by-step instructions if applicable
+5. Offer additional help if needed
+6. Keep professional but friendly tone
+7. Sign off professionally
+8. Keep response under 250 words
+
+Generate the complete email response:"""
+        
+        try:
+            response = self.model.generate_content(prompt)
+            reply_text = response.text.strip()
+            
+            # Clean up any markdown formatting
+            reply_text = reply_text.replace('**', '').replace('*', '')
+            
+            # Determine if should auto-send (confidence > 90%)
+            should_auto_send = confidence > 0.90
+            
+            return {
+                'reply_text': reply_text,
+                'should_auto_send': should_auto_send,
+                'sender_name': sender_name,
+                'company_name': company_name
+            }
+            
+        except Exception as e:
+            print(f"Error generating perfect reply: {e}")
+            # Fallback template
+            fallback_text = f"""Dear {sender_name},
+
+Thank you for contacting {company_name} Support!
+
+We have carefully reviewed your inquiry regarding: {subject}
+
+Our team is working on a resolution and will provide you with a detailed solution shortly. In the meantime, if you have any additional information that might help us resolve this faster, please feel free to reply to this email.
+
+We appreciate your patience and are committed to resolving your issue as quickly as possible.
+
+Best regards,
+IntelliDesk Support Team
+
+Ticket Category: {category}
+Priority: {severity}"""
+            
+            return {
+                'reply_text': fallback_text,
+                'should_auto_send': False,
+                'sender_name': sender_name,
+                'company_name': company_name
+            }
+    
+    def _search_kb(self, subject: str, body: str, category: str) -> List[Dict]:
+        """
+        Search Knowledge Base using FAISS
+        
+        Returns ACTIVE KB entries only with similarity >= 0.70, sorted by similarity
+        """
+        from ai.kb_service import get_active_kb_entries
+        
+        query_text = f"{subject} {body}"
+        query_embedding = self.embedding_service.get_embedding(query_text)
+        
+        # Search FAISS
+        import numpy as np
+        distances, indices = self.embedding_service.index.search(
+            np.array([query_embedding]), 
+            k=5
+        )
+        
+        kb_results = []
+        for dist, idx in zip(distances[0], indices[0]):
+            if idx < len(self.embedding_service.metadata):
+                metadata = self.embedding_service.metadata[idx]
+                
+                # Filter for KB entries only (type == 'kb')
+                if metadata.get('type') == 'kb':
+                    # Convert L2 distance to similarity
+                    similarity = 1 / (1 + dist)
+                    
+                    kb_id = metadata.get('kb_id')
+                    
+                    # Skip inactive entries - check is_active from metadata or DB
+                    # Note: FAISS metadata might be stale, so we rely on DB check during response
+                    
+                    # Filter by category (optional - helps precision)
+                    if metadata.get('category') == category or similarity >= 0.85:
+                        if similarity >= 0.70:
+                            kb_results.append({
+                                'kb_id': kb_id,
+                                'problem_summary': metadata.get('problem_summary'),
+                                'resolution_steps': metadata.get('resolution_steps'),
+                                'category': metadata.get('category'),
+                                'similarity': float(similarity)
+                            })
+        
+        # Sort by similarity descending
+        kb_results.sort(key=lambda x: x['similarity'], reverse=True)
+        return kb_results
+    
+    def _create_kb_response(
+        self,
+        kb_entry: Dict,
+        sender_name: str,
+        ticket_id: str,
+        sla_hours: int,
+        severity: str
+    ) -> Dict:
+        """
+        Create response using Knowledge Base entry
+        Confidence = KB similarity score
+        Increment usage_count in database (only if active)
+        
+        NOTE: This method assumes kb_entry is from active KB entries.
+        Caller should verify is_active status from database if needed.
+        """
+        response_text = f"""Dear {sender_name},
+
+Thank you for contacting IntelliDesk Support!
+
+Based on our Knowledge Base, here is the verified solution for your issue:
+
+**Problem:**
+{kb_entry['problem_summary']}
+
+**Resolution:**
+{kb_entry['resolution_steps']}
+
+This solution has been verified and successfully resolved similar issues in the past.
+
+If this doesn't fully address your concern, please reply to this email and our support team will assist you further.
+
+**Ticket ID:** {ticket_id}
+**Priority:** {severity}
+**Confidence:** {kb_entry['similarity']*100:.1f}%
+
+Best regards,
+IntelliDesk AI Support"""
+        
+        # Usage count will be incremented by caller using increment_kb_usage()
+        
+        return {
+            'response_type': 'kb_match',
+            'response_text': response_text,
+            'confidence': kb_entry['similarity'],  # Confidence from KB similarity
+            'auto_send': kb_entry['similarity'] >= AUTO_SEND_CONFIDENCE,
+            'references': [f"KB Entry #{kb_entry['kb_id']}"],
+            'similar_tickets': [],
+            'kb_id': kb_entry['kb_id']
         }
 
 

@@ -10,6 +10,20 @@ from sqlalchemy.orm import Session
 import sys
 import os
 from datetime import datetime
+from fastapi.encoders import jsonable_encoder
+import json
+
+# Custom JSON encoder to handle datetime objects
+class CustomJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+            default=lambda obj: obj.isoformat() if isinstance(obj, datetime) else obj
+        ).encode("utf-8")
 
 # Add AI module to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))

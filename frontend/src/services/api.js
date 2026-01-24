@@ -58,6 +58,11 @@ export const getTicketThread = async (ticketId) => {
   return response.data;
 };
 
+export const resolveTicketWithEmail = async (ticketId, data) => {
+  const response = await api.post(`/api/tickets/${ticketId}/resolve`, data);
+  return response.data;
+};
+
 // Analytics
 export const getDashboardStats = async () => {
   const response = await api.get("/api/analytics/dashboard");

@@ -80,50 +80,113 @@ class UrgencyDetector:
     
     def _detect_urgency_signals(self, subject: str, body: str) -> list:
         """
-        Detect urgency signals in email
+        Detect urgency signals in email with comprehensive analysis
         """
         signals = []
         text = subject + " " + body
+        text_lower = text.lower()
         
-        # ALL CAPS detection
-        caps_ratio = sum(1 for c in text if c.isupper()) / max(len(text), 1)
-        if caps_ratio > 0.3:
-            signals.append("HIGH_CAPS_RATIO")
+        # 1. TONE DETECTION
+        # ALL CAPS detection - indicates anger/urgency
+        caps_ratio = sum(1 for c in text if c.isupper()) / max(len([c for c in text if c.isalpha()]), 1)
+        if caps_ratio > 0.5:
+            signals.append("ANGRY_TONE_HIGH_CAPS")
+        elif caps_ratio > 0.3:
+            signals.append("ELEVATED_TONE_CAPS")
         
-        # Exclamation marks
+        # Check for all caps words (specific angry expressions)
+        caps_words = re.findall(r'\b[A-Z]{3,}\b', text)
+        if len(caps_words) >= 3:
+            signals.append("MULTIPLE_CAPS_WORDS")
+        
+        # Exclamation marks - shows urgency/frustration
         exclamation_count = text.count('!')
-        if exclamation_count >= 3:
-            signals.append("MULTIPLE_EXCLAMATIONS")
+        if exclamation_count >= 5:
+            signals.append("VERY_HIGH_URGENCY_EXCLAMATIONS")
+        elif exclamation_count >= 3:
+            signals.append("HIGH_URGENCY_EXCLAMATIONS")
         
-        # Time sensitivity
-        time_keywords = ['immediately', 'asap', 'urgent', 'emergency', 'now', 'today']
-        if any(keyword in text.lower() for keyword in time_keywords):
-            signals.append("TIME_SENSITIVE")
+        # Emotional language detection
+        frustrated_words = ['frustrated', 'unacceptable', 'disappointed', 'angry', 
+                          'furious', 'ridiculous', 'terrible', 'horrible', 'worst']
+        if any(word in text_lower for word in frustrated_words):
+            signals.append("EMOTIONAL_LANGUAGE")
         
-        # Business impact
-        impact_keywords = ['losing money', 'revenue', 'customers waiting', 'production']
-        if any(keyword in text.lower() for keyword in impact_keywords):
-            signals.append("BUSINESS_IMPACT")
+        # 2. TIME SENSITIVITY
+        time_keywords = {
+            'critical': ['immediately', 'right now', 'asap', 'urgent', 'emergency', 'now'],
+            'high': ['today', 'this morning', 'this afternoon', 'within hours', 'very soon'],
+            'medium': ['soon', 'quickly', 'prompt', 'expedite']
+        }
         
-        # Escalation keywords
-        if any(keyword in text.lower() for keyword in ESCALATION_KEYWORDS):
+        for urgency_level, keywords in time_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                signals.append(f"TIME_SENSITIVE_{urgency_level.upper()}")
+                break
+        
+        # 3. BUSINESS IMPACT
+        impact_keywords = {
+            'revenue': ['losing money', 'revenue loss', 'financial impact', 'costing us', 
+                       'sales down', 'lost revenue', 'money', 'cost'],
+            'customers': ['customers waiting', 'customer complaints', 'all users', 
+                         'everyone affected', 'clients impacted', 'users cannot'],
+            'production': ['production down', 'system down', 'outage', 'offline', 
+                          'not working', 'broken', 'crashed']
+        }
+        
+        for impact_type, keywords in impact_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                signals.append(f"BUSINESS_IMPACT_{impact_type.upper()}")
+        
+        # 4. ESCALATION KEYWORDS
+        escalation_detected = False
+        for keyword in ESCALATION_KEYWORDS:
+            if keyword in text_lower:
+                signals.append(f"ESCALATION_KEYWORD_{keyword.upper()}")
+                escalation_detected = True
+        
+        if escalation_detected:
             signals.append("ESCALATION_LANGUAGE")
+        
+        # 5. REPETITION (indicates frustration)
+        repeated_phrases = re.findall(r'\b(\w+)\s+\1\b', text_lower)
+        if len(repeated_phrases) >= 2:
+            signals.append("REPETITION_FRUSTRATION")
         
         return signals
     
     def _has_critical_keywords(self, subject: str, body: str) -> bool:
         """
-        Check for P1 critical keywords
+        Check for P1 critical keywords that require immediate response
         """
         text = (subject + " " + body).lower()
         
         critical_patterns = [
+            # Production/System issues
             r'\ball users affected\b',
             r'\bproduction down\b',
             r'\bserver down\b',
+            r'\bsystem down\b',
             r'\boutage\b',
+            r'\bdown for everyone\b',
+            r'\bcompletely broken\b',
+            
+            # Critical severity
             r'\bcritical issue\b',
-            r'\bemergency\b'
+            r'\bcritical bug\b',
+            r'\bemergency\b',
+            r'\bsevere\b',
+            
+            # Business impact
+            r'\blosing money\b',
+            r'\blosing revenue\b',
+            r'\bcannot work\b',
+            r'\bno one can\b',
+            
+            # Security
+            r'\bsecurity breach\b',
+            r'\bdata leak\b',
+            r'\bhacked\b'
         ]
         
         return any(re.search(pattern, text) for pattern in critical_patterns)

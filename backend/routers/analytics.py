@@ -37,13 +37,19 @@ async def get_dashboard_stats(
     ).count()
     
     # Average response time (in seconds)
+    # Only calculate for tickets that have responses
     avg_response = db.query(
         func.avg(
             func.extract('epoch', Ticket.first_response_at - Ticket.created_at)
         )
     ).filter(
-        Ticket.first_response_at.isnot(None)
-    ).scalar() or 0
+        Ticket.first_response_at.isnot(None),
+        Ticket.created_at.isnot(None),
+        Ticket.first_response_at > Ticket.created_at  # Ensure valid time difference
+    ).scalar()
+    
+    # Convert to positive value and default to 0 if None
+    avg_response = abs(float(avg_response)) if avg_response else 0
     
     # SLA compliance rate
     total_with_sla = db.query(Ticket).filter(

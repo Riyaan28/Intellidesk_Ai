@@ -24,10 +24,26 @@ export default function TicketDetail() {
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState("");
+  const [timeRemaining, setTimeRemaining] = useState(0);
 
   useEffect(() => {
     loadTicket();
   }, [ticketId]);
+
+  // Real-time SLA countdown
+  useEffect(() => {
+    if (!ticket) return;
+
+    const updateTimer = () => {
+      const remaining = new Date(ticket.sla_deadline) - new Date();
+      setTimeRemaining(remaining);
+    };
+
+    updateTimer(); // Initial update
+    const interval = setInterval(updateTimer, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, [ticket]);
 
   const loadTicket = async () => {
     try {
@@ -83,8 +99,11 @@ export default function TicketDetail() {
     );
   }
 
-  const timeRemaining = new Date(ticket.sla_deadline) - new Date();
   const hoursRemaining = Math.floor(timeRemaining / (1000 * 60 * 60));
+  const minutesRemaining = Math.floor(
+    (timeRemaining % (1000 * 60 * 60)) / (1000 * 60),
+  );
+  const isBreached = timeRemaining < 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -189,6 +208,42 @@ export default function TicketDetail() {
                       </span>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Escalation Alert */}
+              {ticket.is_escalated && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-red-600 font-bold text-sm">
+                      ⚠️ AUTO-ESCALATED
+                    </span>
+                  </div>
+                  {ticket.escalation_reason && (
+                    <p className="text-xs text-red-700 mt-1">
+                      {ticket.escalation_reason}
+                    </p>
+                  )}
+                  {ticket.followup_count > 0 && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Follow-up #{ticket.followup_count}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Follow-up indicator (non-escalated) */}
+              {!ticket.is_escalated && ticket.followup_count > 0 && (
+                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-yellow-700 font-medium text-sm">
+                      🔔 Follow-up #{ticket.followup_count}
+                    </span>
+                  </div>
+                  <p className="text-xs text-yellow-600 mt-1">
+                    Customer has reached out {ticket.followup_count} time(s).
+                    Next follow-up will trigger auto-escalation.
+                  </p>
                 </div>
               )}
             </div>
@@ -325,8 +380,31 @@ export default function TicketDetail() {
                   <span className="text-xs font-medium text-gray-600">
                     SLA Deadline
                   </span>
-                  <p className="text-gray-900">
+                  <p
+                    className={`font-medium ${
+                      isBreached
+                        ? "text-red-600"
+                        : hoursRemaining < 1
+                          ? "text-orange-600"
+                          : "text-gray-900"
+                    }`}
+                  >
                     {new Date(ticket.sla_deadline).toLocaleString()}
+                  </p>
+                  <p
+                    className={`text-xs mt-1 font-semibold ${
+                      isBreached
+                        ? "text-red-600"
+                        : hoursRemaining < 1
+                          ? "text-orange-600"
+                          : "text-green-600"
+                    }`}
+                  >
+                    {isBreached
+                      ? "⚠️ SLA BREACHED"
+                      : hoursRemaining > 0
+                        ? `✓ ${hoursRemaining}h ${minutesRemaining}m remaining`
+                        : `✓ ${minutesRemaining}m remaining`}
                   </p>
                 </div>
 

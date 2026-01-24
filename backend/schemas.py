@@ -44,6 +44,10 @@ class ClassificationResult(BaseModel):
     subcategory: Optional[str] = None
     requires_review: bool
     reasoning: str
+    method_used: Optional[str] = "lightweight_classifier"
+    is_spam: Optional[bool] = False
+    language_detected: Optional[List[str]] = []
+    processing_time_ms: Optional[float] = 0.0
 
 
 class UrgencyResult(BaseModel):
@@ -123,6 +127,9 @@ class TicketResponse(TicketBase):
     created_at: datetime
     classification_confidence: float
     ai_response_text: Optional[str] = None
+    ai_response_confidence: Optional[float] = None
+    ai_response_sent: bool = False
+    auto_sent: bool = False
     
     class Config:
         from_attributes = True
@@ -150,6 +157,14 @@ class TicketDetailResponse(TicketResponse):
     customer_tier: Optional[str] = None
     thread_count: int = 0
     similar_tickets: List[Dict] = []
+    ai_response_confidence: Optional[float] = None
+    ai_response_sent: bool = False
+    auto_sent: bool = False
+    followup_count: int = 0
+    is_escalated: bool = False
+    escalation_reason: Optional[str] = None
+    escalation_time: Optional[datetime] = None
+    internal_notes: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -199,6 +214,27 @@ class DashboardStats(BaseModel):
     top_categories: List[Dict[str, Any]]
     severity_distribution: Dict[str, int]
     recent_tickets: List[TicketResponse]
+
+
+class ResolveTicketRequest(BaseModel):
+    """
+    Request to resolve a ticket with email
+    """
+    reply_text: str = Field(..., min_length=10, description="Resolution email body text")
+    recipient: EmailStr = Field(..., description="Email recipient (ticket sender)")
+    add_to_kb: bool = Field(default=False, description="Add this resolved ticket to Knowledge Base")
+
+
+class ResolveTicketResponse(BaseModel):
+    """
+    Response after resolving a ticket
+    """
+    success: bool
+    ticket_id: str
+    status: str
+    email_sent: bool
+    recipient: str
+    resolved_at: datetime
 
 
 # System Schemas

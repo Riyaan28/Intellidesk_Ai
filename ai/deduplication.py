@@ -130,16 +130,21 @@ class DeduplicationService:
     ) -> Optional[Dict]:
         """
         Parse ticket references from subject/body
-        Examples: #12345, Ticket-12345, INC000123
+        Examples: #12345, Ticket-12345, INC000123, [Ticket #12345]
         """
         text = subject + " " + body
         
-        # Extract ticket references
+        # Comprehensive ticket reference patterns
         patterns = [
-            r'#(\d{4,})',
-            r'Ticket[:\s#-]*(\d{4,})',
-            r'INC(\d{6,})',
-            r'TICKET[:\s#-]*(\d{4,})'
+            r'#(\d{4,})',                           # #12345
+            r'Ticket[:\s#-]+(\d{4,})',             # Ticket-12345, Ticket: 12345, Ticket #12345
+            r'INC(\d{6,})',                         # INC000123
+            r'TICKET[:\s#-]+(\d{4,})',             # TICKET-12345
+            r'\[Ticket\s*#?(\d{4,})\]',            # [Ticket #12345]
+            r'REQ(\d{6,})',                         # REQ000123
+            r'case[:\s#-]+(\d{4,})',               # case-12345
+            r'ref[:\s#-]+(\d{4,})',                # ref-12345
+            r'ID[:\s#-]+(\d{4,})',                 # ID-12345
         ]
         
         for pattern in patterns:
@@ -148,7 +153,8 @@ class DeduplicationService:
                 # Look for ticket with this ID
                 for ticket in existing_tickets:
                     ticket_id = str(ticket.get('ticket_id', ''))
-                    if match in ticket_id:
+                    # Match against ticket number (numeric part)
+                    if match in ticket_id or ticket_id.endswith(match):
                         return ticket
         
         return None
@@ -212,31 +218,46 @@ class DeduplicationService:
     def _normalize_subject(self, subject: str) -> str:
         """
         Normalize subject line for comparison
-        Remove Re:, Fwd:, timestamps, etc.
+        Remove Re:, Fwd:, timestamps, ticket references, etc.
         """
         normalized = subject.lower()
         
-        # Remove common prefixes
-        prefixes = [r're:', r'fwd:', r'fw:', r'response:', r'answer:']
+        # Remove common prefixes (including multilingual)
+        prefixes = [
+            r're:', r'fwd:', r'fw:', r'response:', r'answer:', 
+            r'réf:', r'rép:', r'res:', r'rv:', r'vs:', r'aw:',
+            r'antw:', r'sv:', r'ref:', r'ynt:', r'wg:'
+        ]
         for prefix in prefixes:
-            normalized = re.sub(f'^{prefix}\\s*', '', normalized)
+            # Remove prefix multiple times (Re: Re: Re:)
+            while re.search(f'^{prefix}\\s*', normalized):
+                normalized = re.sub(f'^{prefix}\\s*', '', normalized)
         
-        # Remove ticket references
-        normalized = re.sub(r'\[ticket\\s*#?\\d+\]', '', normalized, flags=re.IGNORECASE)
+        # Remove ticket references and brackets
+        normalized = re.sub(r'\[ticket\s*#?\d+\]', '', normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r'\[#?\d+\]', '', normalized)
+        normalized = re.sub(r'ticket[:\s#-]+\d+', '', normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r'#\d+', '', normalized)
+        normalized = re.sub(r'INC\d+', '', normalized, flags=re.IGNORECASE)
         
-        # Remove timestamps
-        normalized = re.sub(r'\d{1,2}:\d{2}', '', normalized)
+        # Remove timestamps (various formats)
+        normalized = re.sub(r'\d{1,2}:\d{2}(:\d{2})?(\s*[ap]m)?', '', normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r'\d{1,2}/\d{1,2}/\d{2,4}', '', normalized)
+        normalized = re.sub(r'\d{4}-\d{2}-\d{2}', '', normalized)
+        
+        # Remove common email artifacts
+        normalized = re.sub(r'\s*-\s*$', '', normalized)  # Trailing dashes
+        normalized = re.sub(r'^\s*-\s*', '', normalized)  # Leading dashes
         
         # Remove extra whitespace
         normalized = ' '.join(normalized.split())
         
         return normalized.strip()
     
-    def _fuzzy_match(self, text1: str, text2: str, threshold: float = 0.8) -> bool:
+    def _fuzzy_match(self, text1: str, text2: str, threshold: float = 0.75) -> bool:
         """
-        Fuzzy string matching
+        Fuzzy string matching using multiple algorithms
         """
-        # Simple character-based similarity
         if not text1 or not text2:
             return False
         
@@ -244,18 +265,38 @@ class DeduplicationService:
         if text1 == text2:
             return True
         
-        # Calculate Jaccard similarity
+        # Calculate multiple similarity metrics
+        
+        # 1. Jaccard similarity (word-based)
         words1 = set(text1.split())
         words2 = set(text2.split())
         
-        intersection = words1.intersection(words2)
-        union = words1.union(words2)
+        if words1 or words2:
+            intersection = words1.intersection(words2)
+            union = words1.union(words2)
+            jaccard = len(intersection) / len(union) if union else 0
+        else:
+            jaccard = 0
         
-        if not union:
-            return False
+        # 2. Character-based similarity (for typos)
+        set1 = set(text1.replace(' ', ''))
+        set2 = set(text2.replace(' ', ''))
+        if set1 or set2:
+            char_intersection = set1.intersection(set2)
+            char_union = set1.union(set2)
+            char_sim = len(char_intersection) / len(char_union) if char_union else 0
+        else:
+            char_sim = 0
         
-        similarity = len(intersection) / len(union)
-        return similarity >= threshold
+        # 3. Substring containment
+        shorter = text1 if len(text1) < len(text2) else text2
+        longer = text2 if len(text1) < len(text2) else text1
+        containment = 1.0 if shorter in longer and len(shorter) > 5 else 0
+        
+        # Combined score (weighted average)
+        combined_score = (jaccard * 0.6) + (char_sim * 0.3) + (containment * 0.1)
+        
+        return combined_score >= threshold
     
     def _within_time_window(self, ticket: Dict, hours: int) -> bool:
         """
