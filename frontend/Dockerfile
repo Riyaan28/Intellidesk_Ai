@@ -11,14 +11,8 @@ RUN npm install
 # Copy application code
 COPY . .
 
-# Build for production
-RUN npm run build
-
-# Install serve to serve static files
-RUN npm install -g serve
-
 # Expose port
 EXPOSE 3000
 
-# Serve the built app
-CMD ["serve", "-s", "dist", "-l", "3000"]
+# Run development server
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
