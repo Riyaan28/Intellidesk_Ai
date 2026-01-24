@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: intellidesk-postgres
+    environment:
+      POSTGRES_USER: intellidesk
+      POSTGRES_PASSWORD: intellidesk123
+      POSTGRES_DB: intellidesk
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - intellidesk-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: intellidesk-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - intellidesk-network
+
+  backend:
+    build: ./backend
+    container_name: intellidesk-backend
+    environment:
+      DATABASE_URL: postgresql://intellidesk:intellidesk123@postgres:5432/intellidesk
+      REDIS_URL: redis://redis:6379
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - intellidesk-network
+    volumes:
+      - ./backend:/app
+      - ./ai:/app/ai
+
+  frontend:
+    build: ./frontend
+    container_name: intellidesk-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - intellidesk-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+
+networks:
+  intellidesk-network:
+    driver: bridge
