@@ -13,6 +13,8 @@ Transform customer support emails into intelligently classified, prioritized, an
 
 **🎥 Watch Full Demo**: [Loom Video Link](https://www.loom.com/share/f24104864f064944b2b479e4a388811a)
 
+**🎨 View Project Presentation**: [Canva Design](https://www.canva.com/design/DAG_W3RuDBQ/H4Hpd8iXAr3A2LD61c_5wg/edit?utm_content=DAG_W3RuDBQ&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
+
 ---
 
 ## 🎯 Project Overview
