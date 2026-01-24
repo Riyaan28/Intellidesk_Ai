@@ -20,11 +20,23 @@ import {
   Filter,
   Search,
   RefreshCw,
+  Moon,
+  Sun,
+  Trash2,
 } from "lucide-react";
+import {
+  PieChart as RechartsPie,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+} from "recharts";
 import { getDashboardStats, getTickets } from "../services/api";
 import TicketCard from "../components/TicketCard";
 import UrgencyBadge from "../components/UrgencyBadge";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../contexts/ThemeContext";
 
 // Helper function to format response time
 const formatResponseTime = (seconds) => {
@@ -43,14 +55,37 @@ const formatResponseTime = (seconds) => {
   }
 };
 
+// Color schemes for pie charts
+const CATEGORY_COLORS = [
+  "#8b5cf6", // Purple
+  "#ec4899", // Pink
+  "#f59e0b", // Amber
+  "#10b981", // Green
+  "#3b82f6", // Blue
+  "#f97316", // Orange
+  "#14b8a6", // Teal
+  "#6366f1", // Indigo
+  "#84cc16", // Lime
+];
+
+const SEVERITY_COLORS = {
+  P1: "#dc2626", // Red
+  P2: "#f59e0b", // Orange
+  P3: "#eab308", // Yellow
+  P4: "#3b82f6", // Blue
+};
+
 export default function DashboardNew() {
   const navigate = useNavigate();
+  const { darkMode, toggleDarkMode } = useTheme();
   const [stats, setStats] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     loadDashboard();
@@ -71,6 +106,32 @@ export default function DashboardNew() {
     } catch (error) {
       console.error("Failed to load dashboard:", error);
     } finally {
+      const handleClearAllTickets = async () => {
+        try {
+          setClearing(true);
+          const response = await fetch(
+            "http://localhost:8000/api/tickets/clear-all",
+            {
+              method: "DELETE",
+            },
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+            console.log(`✅ Deleted ${data.deleted_count} tickets`);
+            setShowClearConfirm(false);
+            // Reload dashboard
+            await loadDashboard();
+          } else {
+            throw new Error("Failed to clear tickets");
+          }
+        } catch (error) {
+          console.error("Failed to clear tickets:", error);
+          alert("Failed to delete tickets. Please try again.");
+        } finally {
+          setClearing(false);
+        }
+      };
       setLoading(false);
       setRefreshing(false);
     }
@@ -108,9 +169,9 @@ export default function DashboardNew() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       {/* Enhanced Header */}
-      <div className="bg-white/80 backdrop-blur-xl border-b border-gray-200 sticky top-0 z-50 shadow-lg">
+      <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50 shadow-lg">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             {/* Logo & Title */}
@@ -125,7 +186,7 @@ export default function DashboardNew() {
                 <h1 className="text-2xl font-black bg-gradient-to-r from-primary-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
                   IntelliDesk AI
                 </h1>
-                <p className="text-sm text-gray-600 font-medium">
+                <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">
                   ⚡ The Perfect Response, Every Time
                 </p>
               </div>
@@ -134,14 +195,25 @@ export default function DashboardNew() {
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
               <button
+                onClick={toggleDarkMode}
+                className="p-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all hover:scale-105 active:scale-95"
+                title="Toggle Dark Mode"
+              >
+                {darkMode ? (
+                  <Sun size={20} className="text-yellow-500" />
+                ) : (
+                  <Moon size={20} className="text-gray-600" />
+                )}
+              </button>
+              <button
                 onClick={() => loadDashboard(true)}
                 disabled={refreshing}
-                className="p-2.5 hover:bg-gray-100 rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                className="p-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                 title="Refresh"
               >
                 <RefreshCw
                   size={20}
-                  className={`text-gray-600 ${refreshing ? "animate-spin" : ""}`}
+                  className={`text-gray-600 dark:text-gray-300 ${refreshing ? "animate-spin" : ""}`}
                 />
               </button>
               <button
@@ -197,10 +269,10 @@ export default function DashboardNew() {
           />
         </div>
 
-        {/* Analytics Section */}
+        {/* Analytics Section with Pie Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Category Distribution */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300">
+          {/* Category Distribution Pie Chart */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300">
             <div className="bg-gradient-to-r from-indigo-500 to-purple-500 p-6">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-white/20 backdrop-blur-lg rounded-xl flex items-center justify-center">
@@ -217,44 +289,41 @@ export default function DashboardNew() {
               </div>
             </div>
             <div className="p-6">
-              <div className="space-y-4">
-                {stats?.top_categories?.map((cat, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                    style={{
-                      animation: `slideInLeft 0.5s ease-out ${idx * 100}ms both`,
-                    }}
+              <ResponsiveContainer width="100%" height={300}>
+                <RechartsPie>
+                  <Pie
+                    data={
+                      stats?.top_categories?.map((cat) => ({
+                        name: cat.category,
+                        value: cat.count,
+                      })) || []
+                    }
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) =>
+                      `${name}: ${(percent * 100).toFixed(0)}%`
+                    }
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold">
-                        {idx + 1}
-                      </div>
-                      <span className="text-sm font-semibold text-gray-900">
-                        {cat.category}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-24 bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-1000"
-                          style={{
-                            width: `${(cat.count / (stats.total_tickets_today || 1)) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="text-sm font-bold text-gray-900 w-8 text-right">
-                        {cat.count}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    {stats?.top_categories?.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </RechartsPie>
+              </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Severity Distribution */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300">
+          {/* Severity Distribution Pie Chart */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300">
             <div className="bg-gradient-to-r from-orange-500 to-red-500 p-6">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-white/20 backdrop-blur-lg rounded-xl flex items-center justify-center">
@@ -269,47 +338,38 @@ export default function DashboardNew() {
               </div>
             </div>
             <div className="p-6">
-              <div className="grid grid-cols-2 gap-4">
-                {Object.entries(stats?.severity_distribution || {}).map(
-                  ([severity, count], idx) => (
-                    <div
-                      key={severity}
-                      className={`p-4 rounded-xl border-2 transition-all hover:scale-105 ${
-                        severity === "P1"
-                          ? "bg-red-50 border-red-200 hover:border-red-400"
-                          : severity === "P2"
-                            ? "bg-orange-50 border-orange-200 hover:border-orange-400"
-                            : severity === "P3"
-                              ? "bg-yellow-50 border-yellow-200 hover:border-yellow-400"
-                              : "bg-blue-50 border-blue-200 hover:border-blue-400"
-                      }`}
-                      style={{
-                        animation: `fadeInUp 0.5s ease-out ${idx * 100}ms both`,
-                      }}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <UrgencyBadge severity={severity} size="sm" />
-                        <span
-                          className={`text-2xl font-black ${
-                            severity === "P1"
-                              ? "text-red-600"
-                              : severity === "P2"
-                                ? "text-orange-600"
-                                : severity === "P3"
-                                  ? "text-yellow-600"
-                                  : "text-blue-600"
-                          }`}
-                        >
-                          {count}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-600 font-medium">
-                        {Math.round((count / tickets.length) * 100)}% of total
-                      </div>
-                    </div>
-                  ),
-                )}
-              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <RechartsPie>
+                  <Pie
+                    data={Object.entries(
+                      stats?.severity_distribution || {},
+                    ).map(([severity, count]) => ({
+                      name: severity,
+                      value: count,
+                    }))}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) =>
+                      `${name}: ${(percent * 100).toFixed(0)}%`
+                    }
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {Object.entries(stats?.severity_distribution || {}).map(
+                      ([severity], index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={SEVERITY_COLORS[severity] || "#999999"}
+                        />
+                      ),
+                    )}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </RechartsPie>
+              </ResponsiveContainer>
             </div>
           </div>
         </div>
@@ -420,7 +480,75 @@ export default function DashboardNew() {
             </div>
           )}
         </div>
+
+        {/* Clear All Tickets Button - Fixed at Bottom */}
+        {tickets.length > 0 && (
+          <div className="mt-12 pb-8 flex justify-center">
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="px-8 py-4 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white font-bold rounded-2xl shadow-2xl hover:shadow-red-500/50 transform hover:scale-105 active:scale-95 transition-all flex items-center gap-3"
+            >
+              <Trash2 size={24} />
+              Clear All Tickets
+              <span className="px-2 py-0.5 bg-white/30 rounded-full text-sm">
+                {tickets.length}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Clear Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-md w-full p-8 transform animate-scaleIn">
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertCircle
+                  size={40}
+                  className="text-red-600 dark:text-red-400"
+                />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                Delete All Tickets?
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300">
+                This will permanently delete all{" "}
+                <strong>{tickets.length}</strong> ticket
+                {tickets.length !== 1 ? "s" : ""} from the database. This action
+                cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                disabled={clearing}
+                className="flex-1 px-6 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearAllTickets}
+                disabled={clearing}
+                className="flex-1 px-6 py-3 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {clearing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={20} />
+                    Delete All
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Custom Animations */}
       <style>{`
@@ -455,6 +583,11 @@ export default function DashboardNew() {
             opacity: 1;
             transform: scale(1);
           }
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
       `}</style>
     </div>

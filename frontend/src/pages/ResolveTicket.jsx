@@ -5,7 +5,15 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Mail, Send, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  Mail,
+  Send,
+  CheckCircle,
+  AlertCircle,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 import { getTicket, resolveTicketWithEmail } from "../services/api";
 import UrgencyBadge from "../components/UrgencyBadge";
 
@@ -19,6 +27,8 @@ export default function ResolveTicket() {
   const [replyText, setReplyText] = useState("");
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [autoSent, setAutoSent] = useState(false);
+  const [llmGenerated, setLlmGenerated] = useState(false);
 
   useEffect(() => {
     loadTicket();
@@ -30,31 +40,37 @@ export default function ResolveTicket() {
       const data = await getTicket(ticketId);
       setTicket(data);
 
-      // Pre-fill with AI-generated response if available, otherwise fetch smart template
-      if (data.ai_response_text) {
-        setReplyText(data.ai_response_text);
-      } else {
-        // Fetch intelligent template based on category and tone
-        try {
-          const templateResponse = await fetch(
-            `http://localhost:8000/api/tickets/${ticketId}/resolution-template`,
-          );
-          if (templateResponse.ok) {
-            const templateData = await templateResponse.json();
-            setReplyText(templateData.template);
-          } else {
-            // Fallback template
-            setReplyText(
-              `Dear ${data.sender.split("@")[0]},\n\nThank you for contacting us.\n\n[Your resolution here]\n\nBest regards,\nSupport Team`,
-            );
+      // Fetch perfect LLM-generated reply
+      try {
+        const llmResponse = await fetch(
+          `http://localhost:8000/api/tickets/${ticketId}/perfect-reply`,
+        );
+        if (llmResponse.ok) {
+          const llmData = await llmResponse.json();
+          setReplyText(llmData.reply_text);
+          setLlmGenerated(true);
+
+          // Check if it was auto-sent (confidence > 90%)
+          if (llmData.auto_sent) {
+            setAutoSent(true);
+            setSuccess(true);
+            // Redirect after showing success
+            setTimeout(() => {
+              navigate("/");
+            }, 3000);
           }
-        } catch (err) {
-          console.error("Failed to fetch template:", err);
-          // Fallback template
+        } else {
+          // Fallback to basic template
           setReplyText(
             `Dear ${data.sender.split("@")[0]},\n\nThank you for contacting us.\n\n[Your resolution here]\n\nBest regards,\nSupport Team`,
           );
         }
+      } catch (err) {
+        console.error("Failed to fetch LLM reply:", err);
+        // Fallback template
+        setReplyText(
+          `Dear ${data.sender.split("@")[0]},\n\nThank you for contacting us.\n\n[Your resolution here]\n\nBest regards,\nSupport Team`,
+        );
       }
     } catch (error) {
       console.error("Failed to load ticket:", error);
@@ -125,13 +141,40 @@ export default function ResolveTicket() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <CheckCircle size={64} className="text-green-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Resolution Sent Successfully!
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Email sent to {ticket.sender} and ticket marked as resolved.
-          </p>
+          {autoSent ? (
+            <>
+              <div className="relative">
+                <Zap
+                  size={64}
+                  className="text-yellow-500 mx-auto mb-4 animate-pulse"
+                />
+                <Sparkles
+                  size={32}
+                  className="text-yellow-400 absolute top-0 right-1/3 animate-ping"
+                />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Auto-Sent Successfully! ⚡
+              </h2>
+              <p className="text-gray-600 mb-2">
+                High confidence (&gt;90%) detected - email automatically sent to{" "}
+                {ticket.sender}
+              </p>
+              <p className="text-sm text-gray-500 mb-4">
+                Ticket marked as resolved and response delivered instantly.
+              </p>
+            </>
+          ) : (
+            <>
+              <CheckCircle size={64} className="text-green-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Resolution Sent Successfully!
+              </h2>
+              <p className="text-gray-600 mb-4">
+                Email sent to {ticket.sender} and ticket marked as resolved.
+              </p>
+            </>
+          )}
           <p className="text-sm text-gray-500">Redirecting to dashboard...</p>
         </div>
       </div>
@@ -275,9 +318,17 @@ export default function ResolveTicket() {
 
               {/* Reply Text Area */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Your Reply: *
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Your Reply: *
+                  </label>
+                  {llmGenerated && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
+                      <Sparkles size={12} />
+                      AI Generated
+                    </span>
+                  )}
+                </div>
                 <textarea
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}

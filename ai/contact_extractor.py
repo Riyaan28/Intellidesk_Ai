@@ -57,7 +57,7 @@ class ContactExtractor:
             'name': self.extract_name(email_body, sender_email),
             'email': sender_email or self.extract_email(email_body),
             'phone': self.extract_phone(email_body),
-            'company': self.extract_company(email_body),
+            'company': self.extract_company(email_body, sender_email),
             'address': self.extract_address(email_body),
             'title': self.extract_title(email_body)
         }
@@ -65,8 +65,17 @@ class ContactExtractor:
     def extract_name(self, text: str, sender_email: str = "") -> Optional[str]:
         """
         Extract person name from email signature or salutation
+        PRIMARY: Parse from email (before @) - john.doe@company.com -> John Doe
+        FALLBACK: Parse from signature in email body
         """
-        # Try signature patterns first
+        # PRIMARY: Extract from email address (before @)
+        if sender_email and '@' in sender_email:
+            username = sender_email.split('@')[0]
+            # Convert john.doe or john_doe to John Doe
+            name = username.replace('.', ' ').replace('_', ' ').replace('-', ' ')
+            return ' '.join(word.capitalize() for word in name.split())
+        
+        # FALLBACK: Try signature patterns in email body
         signature_patterns = [
             r'(?:Best regards|Regards|Thanks|Sincerely|Cheers),?\s*\n\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
             r'(?:^|\n)\s*([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\n\s*(?:[A-Z][a-z]+\s+(?:Manager|Director|Engineer|Lead|Head|VP|CEO|CTO))',
@@ -77,13 +86,6 @@ class ContactExtractor:
             match = re.search(pattern, text, re.MULTILINE)
             if match:
                 return match.group(1).strip()
-        
-        # Fallback to email username
-        if sender_email and '@' in sender_email:
-            username = sender_email.split('@')[0]
-            # Convert john.doe or john_doe to John Doe
-            name = username.replace('.', ' ').replace('_', ' ')
-            return ' '.join(word.capitalize() for word in name.split())
         
         return None
     
@@ -104,10 +106,21 @@ class ContactExtractor:
         match = re.search(self.email_pattern, text)
         return match.group(0) if match else None
     
-    def extract_company(self, text: str) -> Optional[str]:
+    def extract_company(self, text: str, sender_email: str = "") -> Optional[str]:
         """
-        Extract company name from signature
+        Extract company name from signature or email domain
+        PRIMARY: Parse from email domain (after @) - john@acme.com -> Acme
+        FALLBACK: Parse from signature/body
         """
+        # PRIMARY: Extract from email domain (after @)
+        if sender_email and '@' in sender_email:
+            domain = sender_email.split('@')[1]
+            # Get company name (before first dot)
+            company = domain.split('.')[0]
+            # Capitalize properly
+            return company.title()
+        
+        # FALLBACK: Try to find in signature
         # Look for lines with company keywords
         lines = text.split('\n')
         

@@ -382,5 +382,99 @@ IntelliDesk AI Support"""
         }
 
 
+    def generate_perfect_reply(
+        self,
+        subject: str,
+        body: str,
+        sender_email: str,
+        category: str,
+        severity: str,
+        confidence: float
+    ) -> Dict:
+        """
+        Generate a perfect, context-aware resolution email using Gemini LLM
+        This is used for manual resolution with pre-filled high-quality responses
+        
+        Returns:
+            {
+                'reply_text': str,
+                'should_auto_send': bool (True if confidence > 90%)
+            }
+        """
+        # Extract sender name and company from email
+        sender_name = sender_email.split('@')[0].replace('.', ' ').replace('_', ' ').title()
+        company_name = sender_email.split('@')[1].split('.')[0].title() if '@' in sender_email else 'Valued Customer'
+        
+        # Create comprehensive prompt for LLM
+        prompt = f"""You are a professional customer support specialist. Generate a perfect resolution email for this support ticket.
+
+Ticket Details:
+- Subject: {subject}
+- Category: {category}
+- Severity: {severity}
+- Customer Email: {sender_email}
+- Customer Name: {sender_name}
+- Company: {company_name}
+- Classification Confidence: {confidence*100:.1f}%
+
+Customer's Issue:
+{body[:500]}
+
+Instructions:
+1. Address the customer by name warmly
+2. Show empathy and understanding
+3. Provide a clear, actionable solution
+4. Include step-by-step instructions if applicable
+5. Offer additional help if needed
+6. Keep professional but friendly tone
+7. Sign off professionally
+8. Keep response under 250 words
+
+Generate the complete email response:"""
+        
+        try:
+            response = self.model.generate_content(prompt)
+            reply_text = response.text.strip()
+            
+            # Clean up any markdown formatting
+            reply_text = reply_text.replace('**', '').replace('*', '')
+            
+            # Determine if should auto-send (confidence > 90%)
+            should_auto_send = confidence > 0.90
+            
+            return {
+                'reply_text': reply_text,
+                'should_auto_send': should_auto_send,
+                'sender_name': sender_name,
+                'company_name': company_name
+            }
+            
+        except Exception as e:
+            print(f"Error generating perfect reply: {e}")
+            # Fallback template
+            fallback_text = f"""Dear {sender_name},
+
+Thank you for contacting {company_name} Support!
+
+We have carefully reviewed your inquiry regarding: {subject}
+
+Our team is working on a resolution and will provide you with a detailed solution shortly. In the meantime, if you have any additional information that might help us resolve this faster, please feel free to reply to this email.
+
+We appreciate your patience and are committed to resolving your issue as quickly as possible.
+
+Best regards,
+IntelliDesk Support Team
+
+Ticket Category: {category}
+Priority: {severity}"""
+            
+            return {
+                'reply_text': fallback_text,
+                'should_auto_send': False,
+                'sender_name': sender_name,
+                'company_name': company_name
+            }
+
+
 # Singleton instance
 auto_response_service = AutoResponseService()
